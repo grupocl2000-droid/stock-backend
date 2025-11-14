@@ -7,11 +7,11 @@ app = Flask(__name__)
 def get_stock_data(symbol):
     try:
         stock = yf.Ticker(symbol)
-        # hist para 2 días para tener cierre previo
-        hist = stock.history(period="2d")
+        info = stock.info
 
-        if hist.empty:
-            # Devuelve una estructura con nulos si no hay datos
+        # yfinance puede devolver un diccionario simple si el símbolo no es válido.
+        # Comprobamos que 'regularMarketTime' exista para asegurar que tenemos datos válidos.
+        if 'regularMarketTime' not in info or info['regularMarketTime'] is None:
             return {
                 "currentPrice": None,
                 "previousClosePrice": None,
@@ -22,26 +22,17 @@ def get_stock_data(symbol):
                 "timestamp": None
             }
 
-        last_row = hist.iloc[-1]
-        # El cierre previo es el de la penúltima fila, si existe
-        prev_close = hist.iloc[-2]['Close'] if len(hist) > 1 else None
-        
-        # El timestamp es la fecha del último dato, en segundos
-        timestamp = int(hist.index[-1].timestamp())
-
         return {
-            "currentPrice": last_row['Close'],
-            "previousClosePrice": prev_close,
-            "high": last_row['High'],
-            "low": last_row['Low'],
-            # yfinance devuelve 'Open', lo mapeamos a 'open'
-            "open": last_row['Open'],
-            "volume": last_row['Volume'],
-            "timestamp": timestamp
+            "currentPrice": info.get('regularMarketPrice'),
+            "previousClosePrice": info.get('regularMarketPreviousClose'),
+            "high": info.get('regularMarketDayHigh'),
+            "low": info.get('regularMarketDayLow'),
+            "open": info.get('regularMarketOpen'),
+            "volume": info.get('regularMarketVolume'),
+            "timestamp": info.get('regularMarketTime')
         }
     except Exception as e:
         print(f"Error getting data for {symbol}: {e}")
-        # Si hay un error, devuelve la misma estructura con nulos
         return {
             "currentPrice": None,
             "previousClosePrice": None,
