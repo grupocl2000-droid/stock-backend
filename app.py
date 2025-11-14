@@ -1,59 +1,66 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 import yfinance as yf
+import pandas as pd
 
 app = Flask(__name__)
 
-# Función para obtener datos de una acción con yfinance
-def get_stock_data_yf(ticker):
+def get_stock_data(symbol):
     try:
-        stock = yf.Ticker(ticker)
-        # hist() devuelve los datos históricos. period="1d" nos da el del último día.
-        hist = stock.history(period="1d")
+        stock = yf.Ticker(symbol)
+        # hist para 2 días para tener cierre previo
+        hist = stock.history(period="2d")
 
         if hist.empty:
-            raise Exception("No data found for ticker")
-
-        # El formato de la moneda depende del ticker
-        currency_symbol = '$' if '.' not in ticker or '.US' in ticker else '€'
+            # Devuelve una estructura con nulos si no hay datos
+            return {
+                "currentPrice": None,
+                "previousClosePrice": None,
+                "high": None,
+                "low": None,
+                "open": None,
+                "volume": None,
+                "timestamp": None
+            }
 
         last_row = hist.iloc[-1]
-        # Usamos el nombre corto de la compañía si está disponible
-        stock_name = stock.info.get('shortName', ticker)
+        # El cierre previo es el de la penúltima fila, si existe
+        prev_close = hist.iloc[-2]['Close'] if len(hist) > 1 else None
+        
+        # El timestamp es la fecha del último dato, en segundos
+        timestamp = int(hist.index[-1].timestamp())
 
         return {
-            "name": stock_name,
-            "last": f"{last_row['Close']:.2f} {currency_symbol}",
-            "high": f"{last_row['High']:.2f} {currency_symbol}",
-            "low": f"{last_row['Low']:.2f} {currency_symbol}",
-            "open": f"{last_row['Open']:.2f} {currency_symbol}",
-            "volume": f"{last_row['Volume']:,}"
+            "currentPrice": last_row['Close'],
+            "previousClosePrice": prev_close,
+            "high": last_row['High'],
+            "low": last_row['Low'],
+            # yfinance devuelve 'Open', lo mapeamos a 'open'
+            "open": last_row['Open'],
+            "volume": last_row['Volume'],
+            "timestamp": timestamp
         }
     except Exception as e:
-        print(f"Error getting data for {ticker}: {e}")
+        print(f"Error getting data for {symbol}: {e}")
+        # Si hay un error, devuelve la misma estructura con nulos
         return {
-            "name": f"{ticker} (Error)",
-            "last": "N/A", "high": "N/A", "low": "N/A", "open": "N/A", "volume": "N/A"
+            "currentPrice": None,
+            "previousClosePrice": None,
+            "high": None,
+            "low": None,
+            "open": None,
+            "volume": None,
+            "timestamp": None
         }
 
-@app.route('/stocks', methods=['GET'])
-def get_all_stocks():
-    # Tickers correctos para Yahoo Finance (con el sufijo .MC para Madrid)
-    ibex_tickers = ["REP.MC", "TEF.MC", "SAN.MC", "BBVA.MC", "ITX.MC",
-                    "IBE.MC", "ELE.MC", "NTGY.MC", "AMS.MC", "AENA.MC"]
+@app.route('/quote', methods=['GET'])
+def get_quote():
+    # Leemos el símbolo del parámetro en la URL (ej: /quote?symbol=TEF.MC)
+    symbol = request.args.get('symbol')
+    if not symbol:
+        return jsonify({"error": "El parámetro 'symbol' es obligatorio"}), 400
 
-    nasdaq_tickers = ["AAPL", "MSFT", "AMZN", "GOOGL", "META"]
-
-    all_stocks_data = []
-
-    # Obtener datos de acciones españolas
-    for ticker in ibex_tickers:
-        all_stocks_data.append(get_stock_data_yf(ticker))
-
-    # Obtener datos de acciones de EE.UU.
-    for ticker in nasdaq_tickers:
-        all_stocks_data.append(get_stock_data_yf(ticker))
-
-    return jsonify(all_stocks_data)
+    data = get_stock_data(symbol)
+    return jsonify(data)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
